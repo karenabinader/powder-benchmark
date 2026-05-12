@@ -6,8 +6,7 @@ The same function will be used for ResNet-18, ConvNeXt, ViT, etc. — just pass 
 
 Designed to run on both CPU (small debugging runs) and GPU (real training).
 """
-import os
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 from __future__ import annotations
 
 import json
@@ -35,17 +34,18 @@ from dataset import PowderDataset, get_class_names
 # ----------------------------------------------------------------------
 @dataclass
 class TrainConfig:
-    model_name: str = "resnet18"          # any timm model name
-    pretrained: bool = True               # use ImageNet weights
-    image_size: int = 224                 # input resolution
+    model_name: str = "resnet18"
+    pretrained: bool = True
+    image_size: int = 224
     batch_size: int = 32
     num_epochs: int = 20
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
     seed: int = 42
-    num_workers: int = 0                  # set to 0 on Windows to avoid issues
-    debug_subset: Optional[int] = None    # if set, use only this many training images
+    num_workers: int = 0
+    debug_subset: Optional[int] = None
     output_dir: str = "../results/runs"
+    data_root: Optional[str] = None   # ← ADD THIS LINE
 
 
 # ----------------------------------------------------------------------
@@ -142,6 +142,10 @@ def train_model(cfg: TrainConfig) -> dict:
     print(f"{'='*60}\n")
 
     # Paths
+    # Use config-specified path if given, otherwise default to repo-relative
+if cfg.data_root is not None:
+    data_root = Path(cfg.data_root)
+else:
     data_root = Path(__file__).parent.parent / "data"
     output_dir = Path(__file__).parent / cfg.output_dir
     run_name = f"{cfg.model_name}_seed{cfg.seed}"

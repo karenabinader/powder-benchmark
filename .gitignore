@@ -1,0 +1,36 @@
+# Data — too big for Git
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# VS Code
+.vscode/
+
+# Model checkpoints — usually too big
+*.pth
+*.pt
+checkpoints/
+models/
+
+# Logs and outputs
+logs/
+runs/
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/

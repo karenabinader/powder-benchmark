@@ -143,10 +143,10 @@ def train_model(cfg: TrainConfig) -> dict:
 
     # Paths
     # Use config-specified path if given, otherwise default to repo-relative
-if cfg.data_root is not None:
-    data_root = Path(cfg.data_root)
-else:
-    data_root = Path(__file__).parent.parent / "data"
+    if cfg.data_root is not None:
+        data_root = Path(cfg.data_root)
+    else:
+        data_root = Path(__file__).parent.parent / "data"
     output_dir = Path(__file__).parent / cfg.output_dir
     run_name = f"{cfg.model_name}_seed{cfg.seed}"
     if cfg.debug_subset:

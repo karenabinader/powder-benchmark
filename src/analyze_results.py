@@ -219,6 +219,108 @@ def figure_main_comparison(df: pd.DataFrame):
     print(f"✓ Saved: {out_path}")
     plt.show()
 
+# ----------------------------------------------------------------------
+# Figure 2 — Training curves (polished)
+# ----------------------------------------------------------------------
+def figure_training_curves(df: pd.DataFrame):
+    """Two side-by-side panels: test loss and test accuracy over epochs."""
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    # Custom color scheme that emphasizes the 224 vs 384 ResNet-18 contrast
+    color_map = {
+        "ResNet-18 @ 384":      "#1f77b4",  # blue - hero
+        "ResNet-18 @ 224":      "#aec7e8",  # light blue - hero's foil
+        "ResNet-50 @ 384":      "#ff7f0e",  # orange
+        "EfficientNet-B0 @ 384": "#17becf", # cyan
+        "ConvNeXt-Tiny @ 384":  "#2ca02c",  # green
+        "ViT-Small @ 384":      "#d62728",  # red
+        "Swin-Tiny @ 224":      "#9467bd",  # purple
+    }
+
+    # Linestyles: dashed for 224-resolution runs, solid for 384
+    def linestyle_for(label):
+        return "--" if "@ 224" in label else "-"
+
+    # Linewidth: extra emphasis on the two ResNet-18 runs (our hero comparison)
+    def linewidth_for(label):
+        return 2.5 if "ResNet-18" in label else 1.5
+
+    # ===== LEFT PANEL: Test loss =====
+    ax_loss = axes[0]
+    for _, row in df.iterrows():
+        epochs = [h["epoch"] for h in row["history"]]
+        test_loss = [h["test_loss"] for h in row["history"]]
+        ax_loss.plot(
+            epochs, test_loss,
+            label=row["label"],
+            color=color_map.get(row["label"], "#888888"),
+            linewidth=linewidth_for(row["label"]),
+            linestyle=linestyle_for(row["label"]),
+            marker="o", markersize=3, alpha=0.9,
+        )
+    ax_loss.set_xlabel("Epoch", fontsize=12, fontweight="bold")
+    ax_loss.set_ylabel("Test loss", fontsize=12, fontweight="bold")
+    ax_loss.set_title("Test loss over training", fontsize=12)
+    ax_loss.set_xlim(0.5, 20.5)
+    ax_loss.set_ylim(0.1, 2.1)
+    ax_loss.grid(True, linestyle=":", alpha=0.4)
+    ax_loss.spines["top"].set_visible(False)
+    ax_loss.spines["right"].set_visible(False)
+
+    # ===== RIGHT PANEL: Test accuracy (zoomed) =====
+    ax_acc = axes[1]
+    for _, row in df.iterrows():
+        epochs = [h["epoch"] for h in row["history"]]
+        test_acc = [h["test_acc"] for h in row["history"]]
+        ax_acc.plot(
+            epochs, test_acc,
+            label=row["label"],
+            color=color_map.get(row["label"], "#888888"),
+            linewidth=linewidth_for(row["label"]),
+            linestyle=linestyle_for(row["label"]),
+            marker="o", markersize=3, alpha=0.9,
+        )
+    ax_acc.set_xlabel("Epoch", fontsize=12, fontweight="bold")
+    ax_acc.set_ylabel("Test accuracy", fontsize=12, fontweight="bold")
+    ax_acc.set_title("Test accuracy over training (y-axis zoomed)", fontsize=12)
+    ax_acc.set_xlim(0.5, 20.5)
+    ax_acc.set_ylim(0.30, 1.00)  # Zoomed to interesting range
+
+    # 2016 BOVW reference line
+    ax_acc.axhline(0.890, color="purple", linestyle=":", linewidth=2, alpha=0.7, zorder=0)
+    ax_acc.text(
+        20.5, 0.890, " 2016 BOVW (0.89)",
+        fontsize=10, color="purple", va="center", ha="left", fontweight="bold",
+    )
+
+    ax_acc.grid(True, linestyle=":", alpha=0.4)
+    ax_acc.spines["top"].set_visible(False)
+    ax_acc.spines["right"].set_visible(False)
+
+    # Single legend below — explicitly labeled with style key
+    handles, labels = ax_acc.get_legend_handles_labels()
+    legend = fig.legend(
+        handles, labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, -0.05),
+        ncol=4,
+        fontsize=10,
+        frameon=True,
+        framealpha=0.95,
+        title="(solid = 384, dashed = 224; thick ResNet-18 = hero comparison)",
+        title_fontsize=9,
+    )
+
+    fig.suptitle(
+        "Training dynamics across architectures (20 epochs, seed=42)",
+        fontsize=14, fontweight="bold", y=0.99,
+    )
+
+    plt.tight_layout(rect=[0, 0.05, 1, 0.97])
+    out_path = OUTPUT_DIR / "fig2_training_curves.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
 
 # ----------------------------------------------------------------------
 # Main
@@ -230,6 +332,7 @@ def main():
 
     print("\nGenerating figures...")
     figure_main_comparison(df)
+    figure_training_curves(df)
 
 
 if __name__ == "__main__":

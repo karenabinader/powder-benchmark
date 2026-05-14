@@ -148,7 +148,7 @@ def train_model(cfg: TrainConfig) -> dict:
     else:
         data_root = Path(__file__).parent.parent / "data"
     output_dir = Path(__file__).parent / cfg.output_dir
-    run_name = f"{cfg.model_name}_seed{cfg.seed}"
+    run_name = f"{cfg.model_name}_seed{cfg.seed}_size{cfg.image_size}"
     if cfg.debug_subset:
         run_name += f"_debug{cfg.debug_subset}"
     run_dir = output_dir / run_name

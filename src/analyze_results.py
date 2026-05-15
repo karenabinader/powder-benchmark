@@ -494,6 +494,104 @@ def figure_per_class_heatmap(df: pd.DataFrame):
     print(f"✓ Saved: {out_path}")
     plt.show()
     
+    # ----------------------------------------------------------------------
+# Figure 5 — Parameters vs Accuracy scatter
+# ----------------------------------------------------------------------
+def figure_params_vs_accuracy(df: pd.DataFrame):
+    """Scatter plot of model parameters vs test accuracy, colored by resolution."""
+
+    # Hard-coded parameter counts (millions), from timm model definitions
+    # Keys must match the 'label' values used in the rest of the analysis
+    params_lookup = {
+        "ResNet-18 @ 384":     11.2,
+        "ResNet-18 @ 224":     11.2,
+        "ResNet-50 @ 384":     23.5,
+        "ViT-Small @ 384":     21.7,
+        "ConvNeXt-Tiny @ 384": 27.8,
+        "Swin-Tiny @ 224":     27.5,
+        "EfficientNet-B0 @ 384": 4.0,
+    }
+
+    # Build arrays for plotting
+    labels = df["label"].values
+    accuracies = df["best_test_acc"].values
+    params = np.array([params_lookup[label] for label in labels])
+
+    # Determine resolution per model (224 vs 384) from the label
+    resolutions = np.array([224 if "@ 224" in label else 384 for label in labels])
+
+    # ------------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    # Color coding: 224 = orange, 384 = blue
+    colors_by_res = {224: "#E69F00", 384: "#0072B2"}
+    point_colors = [colors_by_res[r] for r in resolutions]
+
+    # Scatter
+    ax.scatter(params, accuracies, c=point_colors, s=180, edgecolor="black",
+               linewidth=1.2, zorder=3)
+
+    # Label each point with the model name
+    # Use small offsets to avoid label collisions
+    label_offsets = {
+        "ResNet-18 @ 384":       (0.6, 0.003),
+        "ResNet-18 @ 224":       (0.6, -0.005),
+        "ResNet-50 @ 384":       (0.6, 0.003),
+        "ViT-Small @ 384":       (0.6, -0.012),
+        "ConvNeXt-Tiny @ 384":   (-0.6, 0.005),
+        "Swin-Tiny @ 224":       (0.6, 0.003),
+        "EfficientNet-B0 @ 384": (0.6, 0.003),
+    }
+    for i, label in enumerate(labels):
+        dx, dy = label_offsets.get(label, (0.6, 0.003))
+        ha = "right" if dx < 0 else "left"
+        ax.annotate(label,
+                    xy=(params[i], accuracies[i]),
+                    xytext=(params[i] + dx, accuracies[i] + dy),
+                    fontsize=10, ha=ha, va="center", zorder=4)
+
+    # Reference line: 2016 BOVW baseline
+    ax.axhline(y=0.890, color="gray", linestyle="--", linewidth=1.2, alpha=0.7, zorder=2)
+    ax.text(28.5, 0.890, "2016 BOVW baseline (0.890)",
+            fontsize=9, va="center", ha="right", color="gray", style="italic")
+
+    # Reference line: 2016 watershed baseline
+    ax.axhline(y=0.902, color="gray", linestyle=":", linewidth=1.2, alpha=0.7, zorder=2)
+    ax.text(28.5, 0.902, "2016 watershed baseline (0.902)",
+            fontsize=9, va="center", ha="right", color="gray", style="italic")
+
+    # Axis labels and limits
+    ax.set_xlabel("Trainable parameters (millions)", fontsize=12)
+    ax.set_ylabel("Test accuracy", fontsize=12)
+    ax.set_xlim(0, 32)
+    ax.set_ylim(0.85, 1.00)
+    ax.grid(True, alpha=0.3, zorder=1)
+
+    # Legend for the resolution color coding
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#0072B2",
+               markeredgecolor="black", markersize=12, label="Input resolution: 384"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#E69F00",
+               markeredgecolor="black", markersize=12, label="Input resolution: 224"),
+    ]
+    ax.legend(handles=legend_elements, loc="lower right", fontsize=10, framealpha=0.95)
+
+    # Title and subtitle
+    fig.suptitle(
+        "Model size vs test accuracy (seed=42)\n"
+        "Larger models do not yield higher accuracy on this dataset.",
+        fontsize=13, fontweight="bold", y=0.98,
+    )
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig5_params_vs_accuracy.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
@@ -507,6 +605,7 @@ def main():
     figure_training_curves(df)
     figure_confusion_matrices(df)
     figure_per_class_heatmap(df)
+    figure_params_vs_accuracy(df)
 
 if __name__ == "__main__":
     main()

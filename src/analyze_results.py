@@ -415,6 +415,86 @@ def figure_confusion_matrices(df: pd.DataFrame):
     plt.show()
 
 # ----------------------------------------------------------------------
+# Figure 4 — Per-class accuracy heatmap
+# ----------------------------------------------------------------------
+def figure_per_class_heatmap(df: pd.DataFrame):
+    """Heatmap of per-class recall (rows = models, columns = classes a-h)."""
+    class_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    hard_classes = ["e", "f", "g", "h"]  # involved in the hardest pairs
+
+    # Sort models by overall accuracy descending (best at top)
+    df_sorted = df.sort_values("best_test_acc", ascending=False).reset_index(drop=True)
+
+    # Build the recall matrix: rows = models, columns = classes
+    recall_matrix = np.zeros((len(df_sorted), 8))
+    for idx, (_, row) in enumerate(df_sorted.iterrows()):
+        npz_path = RESULTS_DIR / row["folder"] / "predictions.npz"
+        data = np.load(npz_path)
+        cm = data["confusion_matrix"]
+        # Per-class recall = diagonal / row sum
+        recall_matrix[idx] = cm.diagonal() / cm.sum(axis=1)
+
+    # Add a final "Overall" column = each model's mean accuracy
+    overall_col = df_sorted["best_test_acc"].values.reshape(-1, 1)
+    full_matrix = np.hstack([recall_matrix, overall_col])
+    full_class_names = class_names + ["Overall"]
+
+    # ------------------------------------------------------------------
+    # Plot
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(11, 6))
+
+    # Adaptive color scale — most variation is in 0.70–1.00 range
+    im = ax.imshow(full_matrix, cmap="Blues", vmin=0.70, vmax=1.00, aspect="auto")
+
+    # Thin vertical separator before the "Overall" column
+    ax.axvline(x=7.5, color="black", linewidth=1.2, zorder=3)
+
+    # Annotate every cell with its value
+    for i in range(len(df_sorted)):
+        for j in range(len(full_class_names)):
+            value = full_matrix[i, j]
+            # Text color: white on dark cells, black on light cells
+            color = "white" if value > 0.88 else "black"
+            ax.text(j, i, f"{value:.2f}",
+                    ha="center", va="center",
+                    color=color, fontsize=10, zorder=4)
+
+    # Ticks and labels
+    ax.set_xticks(range(len(full_class_names)))
+    ax.set_xticklabels(full_class_names, fontsize=11)
+    ax.set_yticks(range(len(df_sorted)))
+    ax.set_yticklabels(df_sorted["label"].values, fontsize=10)
+    ax.set_xlabel("Class", fontsize=11)
+    ax.set_ylabel("Model (sorted by overall accuracy)", fontsize=11)
+
+    # Hard-class footnote
+    ax.text(
+        0.5, -0.18,
+        "Classes e, f, g, h were designed to be the hardest in the DeCost & Holm 2016 dataset (closest distribution pairs).",
+        ha="center", va="top", fontsize=9, style="italic",
+        transform=ax.transAxes,
+    )
+
+    # Colorbar
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("Per-class recall", fontsize=10)
+
+    # Title
+    fig.suptitle(
+        "Per-class accuracy heatmap (seed=42)\n"
+        "Rows = model (sorted by overall accuracy). "
+        "Columns = class. Values are per-class recall (diagonal / 128).",
+        fontsize=12, fontweight="bold", y=1.02,
+    )
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig4_per_class_heatmap.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+    
+# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
@@ -426,7 +506,7 @@ def main():
     figure_main_comparison(df)
     figure_training_curves(df)
     figure_confusion_matrices(df)
-
+    figure_per_class_heatmap(df)
 
 if __name__ == "__main__":
     main()

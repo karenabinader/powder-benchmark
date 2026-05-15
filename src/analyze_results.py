@@ -323,6 +323,98 @@ def figure_training_curves(df: pd.DataFrame):
     plt.show()
 
 # ----------------------------------------------------------------------
+# Figure 3 — Confusion matrices grid
+# ----------------------------------------------------------------------
+def figure_confusion_matrices(df: pd.DataFrame):
+    """Grid of confusion matrices, one per model."""
+    n_models = len(df)
+    # Layout: 2 rows × 4 columns (7 models + 1 empty slot)
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes_flat = axes.flatten()
+
+    class_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+    for idx, (_, row) in enumerate(df.iterrows()):
+        ax = axes_flat[idx]
+
+        # Load predictions.npz for this run
+        npz_path = RESULTS_DIR / row["folder"] / "predictions.npz"
+        data = np.load(npz_path)
+        cm = data["confusion_matrix"]
+
+        # Normalize rows (each row sums to 1) so heatmap is comparable
+        # across rows of different sizes
+        cm_normalized = cm.astype(float) / cm.sum(axis=1, keepdims=True)
+
+        # Plot heatmap
+        im = ax.imshow(cm_normalized, cmap="Blues", vmin=0, vmax=1, aspect="equal")
+
+        # Annotate each cell with the count
+        for i in range(8):
+            for j in range(8):
+                count = int(cm[i, j])
+                if count == 0:
+                    continue  # skip zeros for cleaner look
+                # Text color: white on dark cells, black on light cells
+                color = "white" if cm_normalized[i, j] > 0.5 else "black"
+                ax.text(j, i, str(count), ha="center", va="center",
+                        color=color, fontsize=8)
+
+        ax.set_xticks(range(8))
+        ax.set_yticks(range(8))
+        ax.set_xticklabels(class_names, fontsize=9)
+        ax.set_yticklabels(class_names, fontsize=9)
+        ax.set_xlabel("Predicted class", fontsize=9)
+        ax.set_ylabel("True class", fontsize=9)
+        ax.set_title(
+            f"{row['label']}\nbest acc = {row['best_test_acc']:.3f}",
+            fontsize=10,
+        )
+
+        # Highlight the "hard pair" cells the 2016 paper predicted
+        # e=4, g=6  →  cells (4,6) and (6,4)
+        # f=5, h=7  →  cells (5,7) and (7,5)
+        from matplotlib.patches import Rectangle
+        hard_pairs = [(4, 6), (6, 4), (5, 7), (7, 5)]
+        for i, j in hard_pairs:
+            ax.add_patch(Rectangle(
+                (j - 0.5, i - 0.5), 1, 1,
+                fill=False, edgecolor="red", linewidth=1.5,
+            ))
+
+    # Hide the unused 8th subplot
+    axes_flat[-1].axis("off")
+    # Use the empty space for a colorbar
+    cbar_ax = fig.add_axes([0.78, 0.10, 0.18, 0.03])
+    cbar = fig.colorbar(im, cax=cbar_ax, orientation="horizontal")
+    cbar.set_label("Row-normalized count (per-class recall)", fontsize=9)
+
+    # Legend explaining red boxes
+    axes_flat[-1].text(
+        0.5, 0.6,
+        "Red boxes mark the four cells\ncorresponding to the two\nhardest pairs:\n\n"
+        "(e ↔ g) and (f ↔ h)\n\n"
+        "These lognormal-vs-Weibull-fit\npairs are statistically the\n"
+        "closest distributions in the\nDeCost & Holm 2016 dataset.",
+        ha="center", va="center", fontsize=9,
+        transform=axes_flat[-1].transAxes,
+        bbox=dict(boxstyle="round", facecolor="white", edgecolor="red", linewidth=1),
+    )
+
+    fig.suptitle(
+        "Confusion matrices across architectures (seed=42)\n"
+        "Rows = true class, columns = predicted class. Values are test image counts.",
+        fontsize=13, fontweight="bold", y=1.00,
+    )
+
+    plt.subplots_adjust(left=0.04, right=0.96, top=0.92, bottom=0.06,
+                        wspace=0.3, hspace=0.4)
+    out_path = OUTPUT_DIR / "fig3_confusion_matrices.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+
+# ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
@@ -333,6 +425,7 @@ def main():
     print("\nGenerating figures...")
     figure_main_comparison(df)
     figure_training_curves(df)
+    figure_confusion_matrices(df)
 
 
 if __name__ == "__main__":

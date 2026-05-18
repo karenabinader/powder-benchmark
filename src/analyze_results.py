@@ -592,20 +592,430 @@ def figure_params_vs_accuracy(df: pd.DataFrame):
     print(f"✓ Saved: {out_path}")
     plt.show()
 
+# ======================================================================
+# PHASE 5 — Multi-seed analysis
+# Loads all 21 runs (7 architectures × 3 seeds), computes mean ± std,
+# and produces multiseed versions of figures 1, 2, 4, 5.
+# ======================================================================
+
+# Extended registry covering all 21 folders
+# Maps folder name → (canonical_label, params_M, resolution)
+# canonical_label is what we group by; all 3 seeds of one model share it
+MULTISEED_REGISTRY = {}
+
+# Build by combining each base label with each seed's folder name pattern
+_MODEL_DEFS = [
+    # (canonical_label, params_M, resolution, base_folder_pattern)
+    # base_folder_pattern uses {seed} as the placeholder
+    ("ResNet-18 @ 224",      11.2, 224, "resnet18_seed{seed}_size224"),
+    ("ResNet-50 @ 384",      25.5, 384, "resnet50_seed{seed}_size384"),
+    ("EfficientNet-B0 @ 384", 4.0, 384, "efficientnet_b0_seed{seed}_size384"),
+    ("ConvNeXt-Tiny @ 384",  27.8, 384, "convnext_tiny_seed{seed}_size384"),
+    ("ViT-Small @ 384",      22.0, 384, "vit_small_patch16_384_seed{seed}_size384"),
+    ("Swin-Tiny @ 224",      27.5, 224, "swin_tiny_patch4_window7_224_seed{seed}_size224"),
+]
+
+# ResNet-18 @ 384 is special — seed=42 uses legacy folder name without size suffix
+_RESNET18_384_FOLDERS = {
+    42: "resnet18_seed42",
+    0:  "resnet18_seed0_size384",
+    1:  "resnet18_seed1_size384",
+}
+
+for label, params, res, pattern in _MODEL_DEFS:
+    for seed in [42, 0, 1]:
+        folder = pattern.format(seed=seed)
+        MULTISEED_REGISTRY[folder] = {
+            "label": label, "params_M": params, "resolution": res, "seed": seed,
+        }
+# Add ResNet-18 @ 384 manually (legacy seed=42 folder)
+for seed, folder in _RESNET18_384_FOLDERS.items():
+    MULTISEED_REGISTRY[folder] = {
+        "label": "ResNet-18 @ 384", "params_M": 11.2, "resolution": 384, "seed": seed,
+    }
+
+
+def load_all_seeds() -> pd.DataFrame:
+    """Load all 21 runs (7 models × 3 seeds) into one DataFrame."""
+    rows = []
+    for folder_name, meta in MULTISEED_REGISTRY.items():
+        run_dir = RESULTS_DIR / folder_name
+        results_json = run_dir / "results.json"
+        if not results_json.exists():
+            print(f"⚠ Missing: {results_json}")
+            continue
+        with open(results_json) as f:
+            data = json.load(f)
+        rows.append({
+            "folder": folder_name,
+            "label": meta["label"],
+            "params_M": meta["params_M"],
+            "resolution": meta["resolution"],
+            "seed": meta["seed"],
+            "best_test_acc": data["best_test_acc"],
+            "history": data["history"],
+        })
+    df = pd.DataFrame(rows)
+    return df
+
+
+def aggregate_by_model(df_all: pd.DataFrame) -> pd.DataFrame:
+    """Group by label, compute mean and std of best_test_acc across seeds."""
+    agg = df_all.groupby("label").agg(
+        mean_acc=("best_test_acc", "mean"),
+        std_acc=("best_test_acc", "std"),
+        n_seeds=("best_test_acc", "count"),
+        params_M=("params_M", "first"),
+        resolution=("resolution", "first"),
+    ).reset_index()
+    agg = agg.sort_values("mean_acc", ascending=False).reset_index(drop=True)
+    return agg
+
+
+def get_mean_per_class_recall(df_all: pd.DataFrame, label: str) -> np.ndarray:
+    """For one model (across all its seeds), compute mean per-class recall."""
+    subset = df_all[df_all["label"] == label]
+    recalls = []
+    for _, row in subset.iterrows():
+        npz_path = RESULTS_DIR / row["folder"] / "predictions.npz"
+        cm = np.load(npz_path)["confusion_matrix"]
+        recalls.append(cm.diagonal() / cm.sum(axis=1))
+    return np.array(recalls).mean(axis=0)
+
+# ----------------------------------------------------------------------
+# Figure 1 multiseed — Bar chart with error bars
+# ----------------------------------------------------------------------
+def figure_main_comparison_multiseed(df_all: pd.DataFrame):
+    """Bar chart of mean test accuracy with std error bars."""
+    agg = aggregate_by_model(df_all)
+
+    fig, ax = plt.subplots(figsize=(13, 8))
+
+    # Build the combined list: our models (with error bars) + external refs (no error)
+    bars = []
+    for _, row in agg.iterrows():
+        # Determine family from label for consistent coloring
+        label = row["label"]
+        if "ResNet" in label or "EfficientNet" in label:
+            family = "CNN (classic)" if "ResNet" in label else "CNN (efficient)"
+        elif "ConvNeXt" in label:
+            family = "CNN (modern)"
+        else:
+            family = "Transformer"
+        bars.append({
+            "label": label, "acc": row["mean_acc"], "std": row["std_acc"],
+            "family": family,
+        })
+    for ref in EXTERNAL_REFERENCES:
+        bars.append({
+            "label": ref["label"], "acc": ref["test_acc"], "std": 0.0,
+            "family": ref["family"],
+        })
+
+    bars = sorted(bars, key=lambda b: b["acc"])
+
+    labels = [b["label"] for b in bars]
+    accs = [b["acc"] for b in bars]
+    stds = [b["std"] for b in bars]
+    families = [b["family"] for b in bars]
+
+    family_colors = {
+        "CNN (classic)": "#1f77b4", "CNN (modern)": "#2ca02c",
+        "CNN (efficient)": "#17becf", "Transformer": "#ff7f0e",
+        "Reference": "#9467bd", "Baseline": "#7f7f7f",
+    }
+    colors = [family_colors[f] for f in families]
+
+    y_positions = range(len(labels))
+    # Horizontal error bars (xerr instead of yerr because barh is horizontal)
+    ax.barh(y_positions, accs, color=colors, edgecolor="black", linewidth=0.6,
+            xerr=stds, error_kw={"ecolor": "black", "capsize": 4, "elinewidth": 1.2})
+
+    # Value labels — show mean ± std for our models, just value for refs
+    for i, (acc, std) in enumerate(zip(accs, stds)):
+        if std > 0:
+            text = f"{acc:.3f} ± {std:.3f}"
+        else:
+            text = f"{acc:.3f}"
+        ax.text(acc + std + 0.005, i, text, va="center", fontsize=10, fontweight="bold")
+
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(labels, fontsize=11)
+    ax.set_xlim(0.75, 1.02)
+    ax.set_xlabel("Test accuracy (mean ± std across 3 seeds)", fontsize=12, fontweight="bold")
+    ax.set_title(
+        "Architecture comparison on synthetic powder classification\n"
+        "(mean ± std across seeds 42, 0, 1; training set = 1024 images, test set = 1024 images)",
+        fontsize=13, pad=15,
+    )
+
+    # 2016 BOVW reference line
+    ax.axvline(0.890, color="purple", linestyle="--", linewidth=1.5, alpha=0.6, zorder=0)
+    ax.annotate("2016 BOVW\nbaseline (0.890)",
+                xy=(0.890, len(labels) - 0.5),
+                xytext=(0.890 - 0.035, len(labels) - 0.2),
+                fontsize=9, color="purple", ha="center",
+                arrowprops=dict(arrowstyle="->", color="purple", alpha=0.5, lw=1))
+
+    ax.set_axisbelow(True)
+    ax.grid(True, axis="x", linestyle=":", alpha=0.4)
+
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=c, edgecolor="black", label=f)
+                       for f, c in family_colors.items()]
+    ax.legend(handles=legend_elements, loc="lower right", fontsize=10,
+              framealpha=0.95, bbox_to_anchor=(0.98, 0.02))
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig1_main_comparison_multiseed.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+
+
+# ----------------------------------------------------------------------
+# Figure 2 multiseed — Training curves with 3 seeds per model
+# ----------------------------------------------------------------------
+def figure_training_curves_multiseed(df_all: pd.DataFrame):
+    """Training curves with semi-transparent individual seeds + bold mean line."""
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    color_map = {
+        "ResNet-18 @ 384":       "#1f77b4",
+        "ResNet-18 @ 224":       "#aec7e8",
+        "ResNet-50 @ 384":       "#ff7f0e",
+        "EfficientNet-B0 @ 384": "#17becf",
+        "ConvNeXt-Tiny @ 384":   "#2ca02c",
+        "ViT-Small @ 384":       "#d62728",
+        "Swin-Tiny @ 224":       "#9467bd",
+    }
+
+    def linestyle_for(label):
+        return "--" if "@ 224" in label else "-"
+
+    def linewidth_for(label):
+        return 2.5 if "ResNet-18" in label else 1.5
+
+    # Group by label so we can plot 3 seeds + 1 mean per model
+    unique_labels = df_all["label"].unique()
+
+    for ax, metric, ylabel, title, ylim in [
+        (axes[0], "test_loss", "Test loss", "Test loss over training", (0.1, 2.1)),
+        (axes[1], "test_acc", "Test accuracy", "Test accuracy over training (y-axis zoomed)", (0.30, 1.00)),
+    ]:
+        for label in unique_labels:
+            subset = df_all[df_all["label"] == label]
+            color = color_map.get(label, "#888888")
+            ls = linestyle_for(label)
+            lw = linewidth_for(label)
+
+            # Each seed's individual curve, semi-transparent
+            all_values = []
+            for _, row in subset.iterrows():
+                epochs = [h["epoch"] for h in row["history"]]
+                values = [h[metric] for h in row["history"]]
+                ax.plot(epochs, values, color=color, linewidth=0.8,
+                        linestyle=ls, alpha=0.35, zorder=2)
+                all_values.append(values)
+
+            # Bold mean line on top
+            mean_values = np.mean(all_values, axis=0)
+            epochs = list(range(1, len(mean_values) + 1))
+            ax.plot(epochs, mean_values, label=label, color=color,
+                    linewidth=lw, linestyle=ls, marker="o", markersize=3,
+                    alpha=0.95, zorder=3)
+
+        ax.set_xlabel("Epoch", fontsize=12, fontweight="bold")
+        ax.set_ylabel(ylabel, fontsize=12, fontweight="bold")
+        ax.set_title(title, fontsize=12)
+        ax.set_xlim(0.5, 20.5)
+        ax.set_ylim(*ylim)
+        ax.grid(True, linestyle=":", alpha=0.4)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # 2016 BOVW line on accuracy panel
+    axes[1].axhline(0.890, color="purple", linestyle=":", linewidth=2, alpha=0.7, zorder=0)
+    axes[1].text(20.5, 0.890, " 2016 BOVW (0.89)", fontsize=10, color="purple",
+                 va="center", ha="left", fontweight="bold")
+
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.05),
+               ncol=4, fontsize=10, frameon=True, framealpha=0.95,
+               title="(solid = 384, dashed = 224; bold = mean of 3 seeds, faint = individual seeds)",
+               title_fontsize=9)
+
+    fig.suptitle(
+        "Training dynamics across architectures (3 seeds per model: 42, 0, 1)",
+        fontsize=14, fontweight="bold", y=0.99,
+    )
+
+    plt.tight_layout(rect=[0, 0.05, 1, 0.97])
+    out_path = OUTPUT_DIR / "fig2_training_curves_multiseed.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+
+
+# ----------------------------------------------------------------------
+# Figure 4 multiseed — Per-class heatmap of mean recall across seeds
+# ----------------------------------------------------------------------
+def figure_per_class_heatmap_multiseed(df_all: pd.DataFrame):
+    """Heatmap of mean per-class recall across 3 seeds."""
+    class_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    agg = aggregate_by_model(df_all)  # already sorted by mean_acc descending
+
+    # Build the recall matrix: rows = models (sorted), columns = classes
+    recall_matrix = np.zeros((len(agg), 8))
+    for idx, (_, row) in enumerate(agg.iterrows()):
+        recall_matrix[idx] = get_mean_per_class_recall(df_all, row["label"])
+
+    # Add "Overall" column = mean accuracy across seeds
+    overall_col = agg["mean_acc"].values.reshape(-1, 1)
+    full_matrix = np.hstack([recall_matrix, overall_col])
+    full_class_names = class_names + ["Overall"]
+
+    fig, ax = plt.subplots(figsize=(11, 6))
+    im = ax.imshow(full_matrix, cmap="Blues", vmin=0.70, vmax=1.00, aspect="auto")
+    ax.axvline(x=7.5, color="black", linewidth=1.2, zorder=3)
+
+    for i in range(len(agg)):
+        for j in range(len(full_class_names)):
+            value = full_matrix[i, j]
+            color = "white" if value > 0.88 else "black"
+            ax.text(j, i, f"{value:.2f}", ha="center", va="center",
+                    color=color, fontsize=10, zorder=4)
+
+    ax.set_xticks(range(len(full_class_names)))
+    ax.set_xticklabels(full_class_names, fontsize=11)
+    ax.set_yticks(range(len(agg)))
+    ax.set_yticklabels(agg["label"].values, fontsize=10)
+    ax.set_xlabel("Class", fontsize=11)
+    ax.set_ylabel("Model (sorted by mean overall accuracy)", fontsize=11)
+
+    ax.text(0.5, -0.18,
+            "Classes e, f, g, h were designed to be the hardest in the DeCost & Holm 2016 dataset (closest distribution pairs).",
+            ha="center", va="top", fontsize=9, style="italic",
+            transform=ax.transAxes)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
+    cbar.set_label("Mean per-class recall (across 3 seeds)", fontsize=10)
+
+    fig.suptitle(
+        "Per-class accuracy heatmap (mean across 3 seeds: 42, 0, 1)\n"
+        "Rows = model (sorted by mean overall accuracy). "
+        "Columns = class. Values are mean per-class recall.",
+        fontsize=12, fontweight="bold", y=1.02,
+    )
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig4_per_class_heatmap_multiseed.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
+
+
+# ----------------------------------------------------------------------
+# Figure 5 multiseed — Params vs accuracy scatter with error bars
+# ----------------------------------------------------------------------
+def figure_params_vs_accuracy_multiseed(df_all: pd.DataFrame):
+    """Scatter plot of params vs accuracy with vertical error bars."""
+    agg = aggregate_by_model(df_all)
+
+    labels = agg["label"].values
+    mean_accs = agg["mean_acc"].values
+    std_accs = agg["std_acc"].values
+    params = agg["params_M"].values
+    resolutions = agg["resolution"].values
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    colors_by_res = {224: "#E69F00", 384: "#0072B2"}
+    point_colors = [colors_by_res[r] for r in resolutions]
+
+    # Scatter with vertical error bars
+    ax.errorbar(params, mean_accs, yerr=std_accs, fmt="none",
+                ecolor="black", elinewidth=1.2, capsize=5, zorder=2)
+    ax.scatter(params, mean_accs, c=point_colors, s=180, edgecolor="black",
+               linewidth=1.2, zorder=3)
+
+    label_offsets = {
+        "ResNet-18 @ 384":       (0.6, 0.003),
+        "ResNet-18 @ 224":       (0.6, -0.005),
+        "ResNet-50 @ 384":       (0.6, 0.003),
+        "ViT-Small @ 384":       (0.6, -0.012),
+        "ConvNeXt-Tiny @ 384":   (-0.6, 0.005),
+        "Swin-Tiny @ 224":       (0.6, 0.003),
+        "EfficientNet-B0 @ 384": (0.6, 0.003),
+    }
+    for i, label in enumerate(labels):
+        dx, dy = label_offsets.get(label, (0.6, 0.003))
+        ha = "right" if dx < 0 else "left"
+        ax.annotate(label,
+                    xy=(params[i], mean_accs[i]),
+                    xytext=(params[i] + dx, mean_accs[i] + dy),
+                    fontsize=10, ha=ha, va="center", zorder=4)
+
+    ax.axhline(y=0.890, color="gray", linestyle="--", linewidth=1.2, alpha=0.7, zorder=2)
+    ax.text(28.5, 0.890, "2016 BOVW baseline (0.890)",
+            fontsize=9, va="center", ha="right", color="gray", style="italic")
+
+    ax.axhline(y=0.902, color="gray", linestyle=":", linewidth=1.2, alpha=0.7, zorder=2)
+    ax.text(28.5, 0.902, "2016 watershed baseline (0.902)",
+            fontsize=9, va="center", ha="right", color="gray", style="italic")
+
+    ax.set_xlabel("Trainable parameters (millions)", fontsize=12)
+    ax.set_ylabel("Test accuracy (mean ± std)", fontsize=12)
+    ax.set_xlim(0, 32)
+    ax.set_ylim(0.85, 1.00)
+    ax.grid(True, alpha=0.3, zorder=1)
+
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#0072B2",
+               markeredgecolor="black", markersize=12, label="Input resolution: 384"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="#E69F00",
+               markeredgecolor="black", markersize=12, label="Input resolution: 224"),
+    ]
+    ax.legend(handles=legend_elements, loc="lower right", fontsize=10, framealpha=0.95)
+
+    fig.suptitle(
+        "Model size vs test accuracy (mean ± std across 3 seeds: 42, 0, 1)\n"
+        "Larger models do not yield higher accuracy on this dataset.",
+        fontsize=13, fontweight="bold", y=0.98,
+    )
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig5_params_vs_accuracy_multiseed.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"✓ Saved: {out_path}")
+    plt.show()
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------
 def main():
+    # ===== Single-seed analysis (original 5 figures) =====
     df = load_all_results()
-    print(f"\nLoaded {len(df)} runs:")
+    print(f"\nLoaded {len(df)} single-seed runs:")
     print(df[["label", "best_test_acc", "params_M", "resolution", "train_time_min"]].to_string(index=False))
 
-    print("\nGenerating figures...")
+    print("\nGenerating original (single-seed) figures...")
     figure_main_comparison(df)
     figure_training_curves(df)
     figure_confusion_matrices(df)
     figure_per_class_heatmap(df)
     figure_params_vs_accuracy(df)
 
-if __name__ == "__main__":
-    main()
+    # ===== Multi-seed analysis (Phase 5, four new figures) =====
+    df_all = load_all_seeds()
+    print(f"\nLoaded {len(df_all)} multi-seed runs:")
+    print(aggregate_by_model(df_all).to_string(index=False))
+
+    print("\nGenerating multi-seed figures...")
+    figure_main_comparison_multiseed(df_all)
+    figure_training_curves_multiseed(df_all)
+    figure_per_class_heatmap_multiseed(df_all)
+    figure_params_vs_accuracy_multiseed(df_all)

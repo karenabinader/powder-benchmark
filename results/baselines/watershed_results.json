@@ -1,0 +1,105 @@
+{
+  "method": "Watershed segmentation + chi-squared SVM (this implementation)",
+  "config": {
+    "thresholding": "Otsu",
+    "segmentation": "Watershed (skimage)",
+    "min_peak_distance": 5,
+    "n_hist_bins": 25,
+    "hist_range_blender_units": [
+      0.0,
+      0.6
+    ],
+    "pixels_per_blender_unit": 46.54545454545455,
+    "kernel": "chi-squared",
+    "C": 1.0,
+    "seed": 42
+  },
+  "test_accuracy": 0.94921875,
+  "reference_2016_accuracy": 0.902,
+  "confusion_matrix": [
+    [
+      125,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      4,
+      122,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      126,
+      2,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      2,
+      126,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      120,
+      5,
+      3,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      6,
+      113,
+      3,
+      6
+    ],
+    [
+      0,
+      4,
+      0,
+      0,
+      3,
+      1,
+      119,
+      1
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      2,
+      121
+    ]
+  ],
+  "n_train": 1024,
+  "n_test": 1024,
+  "avg_particles_per_train_image": 357.18359375,
+  "avg_particles_per_test_image": 358.3388671875
+}

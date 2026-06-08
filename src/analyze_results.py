@@ -81,6 +81,8 @@ EXTERNAL_REFERENCES = [
     {"label": "Trivial features\n+ logistic reg.", "test_acc": 0.804, "family": "Baseline"},
     {"label": "BOVW + SVM\n(2016)", "test_acc": 0.890, "family": "Reference"},
     {"label": "Watershed + SVM\n(2016)", "test_acc": 0.902, "family": "Reference"},
+    {"label": "BOVW + SVM\n(this work)", "test_acc": 0.8613, "family": "Reproduced"},
+    {"label": "Watershed + SVM\n(this work)", "test_acc": 0.9492, "family": "Reproduced"},
 ]
 
 
@@ -151,6 +153,7 @@ def figure_main_comparison(df: pd.DataFrame):
         "CNN (efficient)": "#17becf",
         "Transformer": "#ff7f0e",
         "Reference": "#9467bd",
+        "Reproduced": "#A569BD",
         "Baseline": "#7f7f7f",
     }
     colors = [family_colors[f] for f in families]
@@ -722,7 +725,7 @@ def figure_main_comparison_multiseed(df_all: pd.DataFrame):
     family_colors = {
         "CNN (classic)": "#1f77b4", "CNN (modern)": "#2ca02c",
         "CNN (efficient)": "#17becf", "Transformer": "#ff7f0e",
-        "Reference": "#9467bd", "Baseline": "#7f7f7f",
+        "Reference": "#9467bd", "Reproduced": "#A569BD", "Baseline": "#7f7f7f",
     }
     colors = [family_colors[f] for f in families]
 
@@ -993,6 +996,7 @@ def figure_params_vs_accuracy_multiseed(df_all: pd.DataFrame):
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     print(f"✓ Saved: {out_path}")
     plt.show()
+    
 # ----------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------

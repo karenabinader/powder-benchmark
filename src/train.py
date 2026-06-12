@@ -176,11 +176,14 @@ def train_model(cfg: TrainConfig) -> dict:
     )
 
     # Model — timm gives us pretrained weights + correct final layer
-    model = timm.create_model(
-        cfg.model_name,
-        pretrained=cfg.pretrained,
-        num_classes=8,
-    ).to(device)
+    model_kwargs = dict(pretrained=cfg.pretrained, num_classes=8)
+    # Transformers (ViT, Swin) bake a fixed input resolution into their position
+    # embeddings, so pass img_size to let timm interpolate them to cfg.image_size.
+    # Conv nets (ResNet, ConvNeXt, EfficientNet) accept any input size and do not
+    # take this argument, so it is only added for the transformer models.
+    if any(tag in cfg.model_name for tag in ("vit", "swin")):
+        model_kwargs["img_size"] = cfg.image_size
+    model = timm.create_model(cfg.model_name, **model_kwargs).to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Trainable parameters: {n_params:,}")

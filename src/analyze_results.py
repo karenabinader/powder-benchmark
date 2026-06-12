@@ -597,13 +597,13 @@ def figure_params_vs_accuracy(df: pd.DataFrame):
 
 # ======================================================================
 # PHASE 5 — Multi-seed analysis
-# Loads all 21 runs (7 architectures × 3 seeds), computes mean ± std,
+# Loads all 35 runs (7 architectures × 5 seeds), computes mean ± std,
 # and produces multiseed versions of figures 1, 2, 4, 5.
 # ======================================================================
 
-# Extended registry covering all 21 folders
+# Extended registry covering all 35 folders
 # Maps folder name → (canonical_label, params_M, resolution)
-# canonical_label is what we group by; all 3 seeds of one model share it
+# canonical_label is what we group by; all 5 seeds of one model share it
 MULTISEED_REGISTRY = {}
 
 # Build by combining each base label with each seed's folder name pattern
@@ -623,10 +623,12 @@ _RESNET18_384_FOLDERS = {
     42: "resnet18_seed42",
     0:  "resnet18_seed0_size384",
     1:  "resnet18_seed1_size384",
+    2:  "resnet18_seed2_size384",
+    3:  "resnet18_seed3_size384",
 }
 
 for label, params, res, pattern in _MODEL_DEFS:
-    for seed in [42, 0, 1]:
+    for seed in [42, 0, 1, 2, 3]:
         folder = pattern.format(seed=seed)
         MULTISEED_REGISTRY[folder] = {
             "label": label, "params_M": params, "resolution": res, "seed": seed,
@@ -639,7 +641,7 @@ for seed, folder in _RESNET18_384_FOLDERS.items():
 
 
 def load_all_seeds() -> pd.DataFrame:
-    """Load all 21 runs (7 models × 3 seeds) into one DataFrame."""
+    """Load all 35 runs (7 models × 5 seeds) into one DataFrame."""
     rows = []
     for folder_name, meta in MULTISEED_REGISTRY.items():
         run_dir = RESULTS_DIR / folder_name
@@ -745,10 +747,10 @@ def figure_main_comparison_multiseed(df_all: pd.DataFrame):
     ax.set_yticks(y_positions)
     ax.set_yticklabels(labels, fontsize=11)
     ax.set_xlim(0.75, 1.02)
-    ax.set_xlabel("Test accuracy (mean ± std across 3 seeds)", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Test accuracy (mean ± std across 5 seeds)", fontsize=12, fontweight="bold")
     ax.set_title(
         "Architecture comparison on synthetic powder classification\n"
-        "(mean ± std across seeds 42, 0, 1; training set = 1024 images, test set = 1024 images)",
+        "(mean ± std across seeds 42, 0, 1, 2, 3; training set = 1024 images, test set = 1024 images)",
         fontsize=13, pad=15,
     )
 
@@ -780,7 +782,7 @@ def figure_main_comparison_multiseed(df_all: pd.DataFrame):
 
 
 # ----------------------------------------------------------------------
-# Figure 2 multiseed — Training curves with 3 seeds per model
+# Figure 2 multiseed — Training curves with 5 seeds per model
 # ----------------------------------------------------------------------
 def figure_training_curves_multiseed(df_all: pd.DataFrame):
     """Training curves with semi-transparent individual seeds + bold mean line."""
@@ -802,7 +804,7 @@ def figure_training_curves_multiseed(df_all: pd.DataFrame):
     def linewidth_for(label):
         return 2.5 if "ResNet-18" in label else 1.5
 
-    # Group by label so we can plot 3 seeds + 1 mean per model
+    # Group by label so we can plot 5 seeds + 1 mean per model
     unique_labels = df_all["label"].unique()
 
     for ax, metric, ylabel, title, ylim in [
@@ -848,11 +850,11 @@ def figure_training_curves_multiseed(df_all: pd.DataFrame):
     handles, labels = axes[1].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.05),
                ncol=4, fontsize=10, frameon=True, framealpha=0.95,
-               title="(solid = 384, dashed = 224; bold = mean of 3 seeds, faint = individual seeds)",
+               title="(solid = 384, dashed = 224; bold = mean of 5 seeds, faint = individual seeds)",
                title_fontsize=9)
 
     fig.suptitle(
-        "Training dynamics across architectures (3 seeds per model: 42, 0, 1)",
+        "Training dynamics across architectures (5 seeds per model: 42, 0, 1, 2, 3)",
         fontsize=14, fontweight="bold", y=0.99,
     )
 
@@ -867,7 +869,7 @@ def figure_training_curves_multiseed(df_all: pd.DataFrame):
 # Figure 4 multiseed — Per-class heatmap of mean recall across seeds
 # ----------------------------------------------------------------------
 def figure_per_class_heatmap_multiseed(df_all: pd.DataFrame):
-    """Heatmap of mean per-class recall across 3 seeds."""
+    """Heatmap of mean per-class recall across 5 seeds."""
     class_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
     agg = aggregate_by_model(df_all)  # already sorted by mean_acc descending
 
@@ -905,10 +907,10 @@ def figure_per_class_heatmap_multiseed(df_all: pd.DataFrame):
             transform=ax.transAxes)
 
     cbar = fig.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
-    cbar.set_label("Mean per-class recall (across 3 seeds)", fontsize=10)
+    cbar.set_label("Mean per-class recall (across 5 seeds)", fontsize=10)
 
     fig.suptitle(
-        "Per-class accuracy heatmap (mean across 3 seeds: 42, 0, 1)\n"
+        "Per-class accuracy heatmap (mean across 5 seeds: 42, 0, 1, 2, 3)\n"
         "Rows = model (sorted by mean overall accuracy). "
         "Columns = class. Values are mean per-class recall.",
         fontsize=12, fontweight="bold", y=1.02,
@@ -986,7 +988,7 @@ def figure_params_vs_accuracy_multiseed(df_all: pd.DataFrame):
     ax.legend(handles=legend_elements, loc="lower right", fontsize=10, framealpha=0.95)
 
     fig.suptitle(
-        "Model size vs test accuracy (mean ± std across 3 seeds: 42, 0, 1)\n"
+        "Model size vs test accuracy (mean ± std across 5 seeds: 42, 0, 1, 2, 3)\n"
         "Larger models do not yield higher accuracy on this dataset.",
         fontsize=13, fontweight="bold", y=0.98,
     )
@@ -1022,4 +1024,4 @@ def main():
     figure_main_comparison_multiseed(df_all)
     figure_training_curves_multiseed(df_all)
     figure_per_class_heatmap_multiseed(df_all)
-    figure_params_vs_accuracy_multiseed(df_all)
+    figure_params_vs_accuracy_multiseed(df_all)

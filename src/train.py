@@ -41,6 +41,7 @@ class TrainConfig:
     num_epochs: int = 20
     learning_rate: float = 1e-4
     weight_decay: float = 1e-4
+    optimizer: str = "adamw"      # "adamw" or "sgd" (SGD uses momentum=0.9)
     seed: int = 42
     num_workers: int = 0
     debug_subset: Optional[int] = None
@@ -189,11 +190,19 @@ def train_model(cfg: TrainConfig) -> dict:
     print(f"Trainable parameters: {n_params:,}")
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=cfg.learning_rate,
-        weight_decay=cfg.weight_decay,
-    )
+    if cfg.optimizer.lower() == "sgd":
+        optimizer = optim.SGD(
+            model.parameters(),
+            lr=cfg.learning_rate,
+            momentum=0.9,
+            weight_decay=cfg.weight_decay,
+        )
+    else:
+        optimizer = optim.AdamW(
+            model.parameters(),
+            lr=cfg.learning_rate,
+            weight_decay=cfg.weight_decay,
+        )
 
     # Training loop
     history = []

@@ -1025,3 +1025,131 @@ def main():
     figure_training_curves_multiseed(df_all)
     figure_per_class_heatmap_multiseed(df_all)
     figure_params_vs_accuracy_multiseed(df_all)
+
+
+# ----------------------------------------------------------------------
+# Figure 6 — Deep models at 512 vs. 2016-paper methods (resolution matched)
+# All deep models and both classical baselines run at 512x512, so this is
+# a like-for-like comparison with no downsampling on either side.
+# Loads the *_size512 runs directly (independent of MULTISEED_REGISTRY).
+# ----------------------------------------------------------------------
+_ARCH_512 = {
+    "resnet18":                     ("ResNet-18 @ 512",       "CNN (classic)"),
+    "resnet50":                     ("ResNet-50 @ 512",       "CNN (classic)"),
+    "convnext_tiny":                ("ConvNeXt-Tiny @ 512",   "CNN (modern)"),
+    "efficientnet_b0":              ("EfficientNet-B0 @ 512", "CNN (efficient)"),
+    "vit_small_patch16_384":        ("ViT-Small @ 512*",      "Transformer"),
+    "swin_tiny_patch4_window7_224": ("Swin-Tiny @ 512*",      "Transformer"),
+}
+
+
+def load_512_runs() -> pd.DataFrame:
+    """Load every *_size512 run by scanning the runs folder directly."""
+    rows = []
+    for run_dir in sorted(RESULTS_DIR.glob("*_size512")):
+        results_json = run_dir / "results.json"
+        if not results_json.exists():
+            continue
+        core = run_dir.name[:-len("_size512")]      # e.g. resnet50_seed3
+        model_name, seed = core.rsplit("_seed", 1)
+        if model_name not in _ARCH_512:
+            continue
+        with open(results_json) as f:
+            data = json.load(f)
+        rows.append({
+            "model": model_name,
+            "seed": int(seed),
+            "best_test_acc": data["best_test_acc"],
+        })
+    df = pd.DataFrame(rows)
+    print(f"Loaded {len(df)} runs at 512x512 "
+          f"({df['model'].nunique() if not df.empty else 0} architectures)")
+    return df
+
+
+def figure_512_vs_baselines():
+    """Bar chart: deep models @512 vs classical 2016-paper methods @512."""
+    df = load_512_runs()
+    if df.empty:
+        print(f"No *_size512 runs found in {RESULTS_DIR}. Copy them from Drive first.")
+        return
+
+    family_colors = {
+        "CNN (classic)":   "#1f77b4",
+        "CNN (modern)":    "#2ca02c",
+        "CNN (efficient)": "#17becf",
+        "Transformer":     "#ff7f0e",
+        "Reproduced":      "#A569BD",
+    }
+
+    bars = []
+    for model_name, (label, family) in _ARCH_512.items():
+        sub = df[df["model"] == model_name]
+        if sub.empty:
+            print(f"  (no 512 runs yet for {model_name})")
+            continue
+        bars.append({
+            "label": label,
+            "family": family,
+            "mean": sub["best_test_acc"].mean(),
+            "std": sub["best_test_acc"].std(ddof=1) if len(sub) > 1 else 0.0,
+            "n": len(sub),
+        })
+
+    # Reproduced 2016-paper methods — these also ran at 512x512
+    bars.append({"label": "Watershed + SVM\n(this work, 512)", "family": "Reproduced",
+                 "mean": 0.9492, "std": 0.0, "n": None})
+    bars.append({"label": "BOVW + SVM\n(this work, 512)", "family": "Reproduced",
+                 "mean": 0.8613, "std": 0.0, "n": None})
+
+    bars.sort(key=lambda b: b["mean"])          # highest ends up on top in barh
+
+    labels = [b["label"] for b in bars]
+    means = [b["mean"] for b in bars]
+    stds = [b["std"] for b in bars]
+    colors = [family_colors[b["family"]] for b in bars]
+    y = np.arange(len(bars))
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.barh(y, means, xerr=stds, color=colors, edgecolor="black",
+            linewidth=0.6, error_kw=dict(ecolor="black", capsize=4, lw=1.2),
+            zorder=3)
+
+    for yi, b in zip(y, bars):
+        txt = f"{b['mean']:.3f}" + (f" ± {b['std']:.3f}" if b["n"] else "")
+        ax.text(b["mean"] + b["std"] + 0.002, yi, txt,
+                va="center", ha="left", fontsize=10, fontweight="bold")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=10)
+    ax.set_xlabel("Test accuracy", fontsize=12, fontweight="bold")
+    ax.set_xlim(0.80, 0.98)
+    ax.set_title(
+        "Deep models vs. 2016-paper methods — all at 512×512 resolution\n"
+        "(deep models: mean ± std across 5 seeds; classical methods reproduced at 512)",
+        fontsize=13, fontweight="bold")
+
+    # 2016 published reference lines (the paper's own reported numbers)
+    ax.axvline(0.890, color="purple", linestyle="--", linewidth=1.4, alpha=0.6, zorder=1)
+    ax.text(0.890, len(bars) - 0.4, " 2016 BOVW (0.890)", color="purple",
+            fontsize=9, va="top", ha="left", rotation=90)
+    ax.axvline(0.902, color="gray", linestyle=":", linewidth=1.4, alpha=0.7, zorder=1)
+    ax.text(0.902, len(bars) - 0.4, " 2016 Watershed (0.902)", color="gray",
+            fontsize=9, va="top", ha="left", rotation=90)
+
+    from matplotlib.patches import Patch
+    legend_handles = [Patch(facecolor=c, edgecolor="black", label=f)
+                      for f, c in family_colors.items()]
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=9, framealpha=0.95)
+
+    ax.grid(axis="x", linestyle=":", alpha=0.4, zorder=0)
+    fig.text(0.01, 0.01,
+             "*ViT and Swin adapted to 512 (interpolated / padded position embeddings); "
+             "the four CNNs run at 512 natively.",
+             fontsize=8, style="italic", color="#555555")
+
+    plt.tight_layout(rect=[0, 0.03, 1, 1])
+    out_path = OUTPUT_DIR / "fig6_deep512_vs_baselines.png"
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"\u2713 Saved: {out_path}")

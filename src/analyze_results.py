@@ -1424,3 +1424,100 @@ def figure_params_vs_accuracy_512(df_all: pd.DataFrame):
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     print(f"\u2713 Saved: {out_path}")
     plt.show()
+
+
+# ----------------------------------------------------------------------
+# Figure 3 at 512 — Confusion matrices, summed across the 5 seeds.
+# One matrix per architecture; cells are total test-image counts across
+# all 5 seeds (out of 640 per class), colored by row-normalized recall.
+# ----------------------------------------------------------------------
+def figure_confusion_matrices_512(df_all: pd.DataFrame):
+    """Grid of confusion matrices at 512, summed across seeds 42,0,1,2,3."""
+    if df_all.empty:
+        print("No 512 runs loaded; nothing to plot."); return
+
+    class_names = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    agg = aggregate_by_model(df_all)  # sorted by mean accuracy (descending)
+
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes_flat = axes.flatten()
+    from matplotlib.patches import Rectangle
+    im = None
+
+    for idx, (_, arow) in enumerate(agg.iterrows()):
+        ax = axes_flat[idx]
+        label = arow["label"]
+
+        # Sum the confusion matrices over all seeds of this model
+        cm_sum = np.zeros((8, 8), dtype=float)
+        n_found = 0
+        for _, r in df_all[df_all["label"] == label].iterrows():
+            npz_path = RESULTS_DIR / r["folder"] / "predictions.npz"
+            if not npz_path.exists():
+                continue
+            cm_sum += np.load(npz_path)["confusion_matrix"]
+            n_found += 1
+
+        if n_found == 0:
+            ax.text(0.5, 0.5, f"{label}\n(no predictions.npz)", ha="center",
+                    va="center", transform=ax.transAxes, fontsize=10)
+            ax.axis("off")
+            continue
+
+        cm_norm = cm_sum / cm_sum.sum(axis=1, keepdims=True)
+        im = ax.imshow(cm_norm, cmap="Blues", vmin=0, vmax=1, aspect="equal")
+
+        for i in range(8):
+            for j in range(8):
+                count = int(round(cm_sum[i, j]))
+                if count == 0:
+                    continue
+                color = "white" if cm_norm[i, j] > 0.5 else "black"
+                ax.text(j, i, str(count), ha="center", va="center",
+                        color=color, fontsize=7)
+
+        ax.set_xticks(range(8)); ax.set_yticks(range(8))
+        ax.set_xticklabels(class_names, fontsize=9)
+        ax.set_yticklabels(class_names, fontsize=9)
+        ax.set_xlabel("Predicted class", fontsize=9)
+        ax.set_ylabel("True class", fontsize=9)
+        ax.set_title(f"{label}\nmean acc = {arow['mean_acc']:.3f} "
+                     f"(\u00b1{arow['std_acc']:.3f})", fontsize=10)
+
+        for i, j in [(4, 6), (6, 4), (5, 7), (7, 5)]:
+            ax.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                   edgecolor="red", linewidth=1.5))
+
+    # Hide any unused subplots (6 models -> slots 6 and 7 are spare)
+    for k in range(len(agg), len(axes_flat)):
+        axes_flat[k].axis("off")
+
+    # Legend box in the first spare slot
+    if len(agg) < len(axes_flat):
+        axes_flat[len(agg)].text(
+            0.5, 0.5,
+            "Red boxes mark the four cells\ncorresponding to the two\nhardest pairs:\n\n"
+            "(e \u2194 g) and (f \u2194 h)\n\n"
+            "These lognormal-vs-Weibull-fit\npairs are statistically the\n"
+            "closest distributions in the\nDeCost & Holm 2016 dataset.",
+            ha="center", va="center", fontsize=9,
+            transform=axes_flat[len(agg)].transAxes,
+            bbox=dict(boxstyle="round", facecolor="white", edgecolor="red", linewidth=1))
+
+    if im is not None:
+        cbar_ax = fig.add_axes([0.78, 0.10, 0.18, 0.03])
+        cbar = fig.colorbar(im, cax=cbar_ax, orientation="horizontal")
+        cbar.set_label("Row-normalized count (per-class recall)", fontsize=9)
+
+    fig.suptitle(
+        "Confusion matrices at 512\u00d7512 (summed across 5 seeds: 42, 0, 1, 2, 3)\n"
+        "Rows = true class, columns = predicted class. "
+        "Values = total test-image counts (out of 640 per class).",
+        fontsize=13, fontweight="bold", y=1.00)
+
+    plt.subplots_adjust(left=0.04, right=0.96, top=0.92, bottom=0.06,
+                        wspace=0.3, hspace=0.4)
+    out_path = OUTPUT_DIR / "fig3_confusion_matrices_512.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"\u2713 Saved: {out_path}")
+    plt.show()

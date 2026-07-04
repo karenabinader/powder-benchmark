@@ -1521,3 +1521,98 @@ def figure_confusion_matrices_512(df_all: pd.DataFrame):
     plt.savefig(out_path, dpi=200, bbox_inches="tight")
     print(f"\u2713 Saved: {out_path}")
     plt.show()
+
+
+# ----------------------------------------------------------------------
+# Figure 7 — Tuned vs fixed-recipe results at 512 for the three tuned
+# models. Grouped bars (mean +/- std across 5 seeds) with the individual
+# seed points overlaid, so both the accuracy change and the change in
+# run-to-run spread are visible. Reads fixed runs from results/runs and
+# tuned runs from results/runs_tuned.
+# ----------------------------------------------------------------------
+_TUNED_MODELS = [
+    ("resnet18",                     "ResNet-18"),
+    ("convnext_tiny",                "ConvNeXt-Tiny"),
+    ("swin_tiny_patch4_window7_224", "Swin-Tiny"),
+]
+
+
+def _load_512_best_accs(runs_base, model_name):
+    accs = []
+    for seed in [42, 0, 1, 2, 3]:
+        rj = Path(runs_base) / f"{model_name}_seed{seed}_size512" / "results.json"
+        if rj.exists():
+            with open(rj) as f:
+                accs.append(json.load(f)["best_test_acc"])
+    return accs
+
+
+def figure_tuned_vs_fixed():
+    """Grouped bar chart comparing fixed-recipe vs tuned accuracy at 512."""
+    fixed_base = RESULTS_DIR
+    tuned_base = RESULTS_DIR.parent / "runs_tuned"
+
+    rows = []
+    for model_name, label in _TUNED_MODELS:
+        fixed = _load_512_best_accs(fixed_base, model_name)
+        tuned = _load_512_best_accs(tuned_base, model_name)
+        if not fixed:
+            print(f"\u26a0 No fixed runs for {label} in {fixed_base}")
+        if not tuned:
+            print(f"\u26a0 No tuned runs for {label} in {tuned_base}")
+        rows.append({"label": label, "fixed": fixed, "tuned": tuned})
+
+    if all(not r["tuned"] for r in rows):
+        print("No tuned runs found. Copy results/runs_tuned from Drive first.")
+        return
+
+    import numpy as np
+    fig, ax = plt.subplots(figsize=(11, 7))
+    x = np.arange(len(rows))
+    w = 0.36
+    fixed_color, tuned_color = "#9aa7b4", "#2E86C1"
+
+    for i, r in enumerate(rows):
+        for (accs, offset, color, name) in [
+            (r["fixed"], -w / 2, fixed_color, "Fixed recipe"),
+            (r["tuned"], +w / 2, tuned_color, "Tuned"),
+        ]:
+            if not accs:
+                continue
+            m = float(np.mean(accs))
+            s = float(np.std(accs, ddof=1)) if len(accs) > 1 else 0.0
+            ax.bar(i + offset, m, width=w, color=color, edgecolor="black",
+                   linewidth=0.6, zorder=2,
+                   label=name if i == 0 else None)
+            ax.errorbar(i + offset, m, yerr=s, fmt="none", ecolor="black",
+                        capsize=4, elinewidth=1.2, zorder=4)
+            # individual seed points, jittered
+            jit = (np.random.RandomState(i).rand(len(accs)) - 0.5) * (w * 0.5)
+            ax.scatter(np.full(len(accs), i + offset) + jit, accs, s=26,
+                       color="white", edgecolor="black", linewidth=0.7, zorder=5)
+            ax.text(i + offset, m + s + 0.004, f"{m:.3f}\n\u00b1{s:.3f}",
+                    ha="center", va="bottom", fontsize=9, fontweight="bold")
+
+    # reproduced watershed baseline for context
+    ax.axhline(0.949, color="purple", linestyle="--", linewidth=1.2, alpha=0.5, zorder=1)
+    ax.text(len(rows) - 0.5, 0.949, " watershed baseline (0.949)", color="purple",
+            fontsize=8, va="bottom", ha="right", style="italic")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([r["label"] for r in rows], fontsize=12)
+    ax.set_ylabel("Test accuracy (mean \u00b1 std across 5 seeds)", fontsize=12, fontweight="bold")
+    ax.set_ylim(0.90, 1.00)
+    ax.set_title(
+        "Effect of per-architecture hyperparameter tuning at 512\u00d7512\n"
+        "(bars = mean \u00b1 std; white points = individual seeds)",
+        fontsize=13, fontweight="bold")
+    ax.legend(loc="lower right", fontsize=10, framealpha=0.95)
+    ax.grid(axis="y", linestyle=":", alpha=0.4, zorder=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    plt.tight_layout()
+    out_path = OUTPUT_DIR / "fig7_tuned_vs_fixed_512.png"
+    plt.savefig(out_path, dpi=200, bbox_inches="tight")
+    print(f"\u2713 Saved: {out_path}")
+    plt.show()
